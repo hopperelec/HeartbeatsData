@@ -22,6 +22,8 @@ _HOURS_IN_DAY = 24
 _SECS_IN_DAY = _SECS_IN_HOUR * _HOURS_IN_DAY
 _DAYS_IN_WEEK = 7
 
+_COLOR_TYPE = tuple[float, float, float]
+
 
 def show():
     plt.show()
@@ -43,10 +45,13 @@ class HeartbeatData:
     dates = []
     secs_since_midnights = []
 
-    hb_type_color_map: dict[str, tuple[float, float, float]] = None  # Set by legend
-    colors: list[tuple[float, float, float]] = None  # Set by legend
-    durations: dict[date, list[tuple[str, int, int]]] = None  # Set by calc_durations
-    duration_counts = None  # Set by calc_durations
+    hb_type_color_map: dict[str, _COLOR_TYPE] = None  # Set by legend
+    colors: list[_COLOR_TYPE] = None  # Set by legend
+    duration_dates: list[date] = None  # Set by calc_durations
+    duration_types: list[str] = None  # Set by calc_durations
+    duration_lengths: list[int] = None  # Set by calc_durations
+    duration_starts: list[int] = None  # Set by calc_durations
+    duration_counts = None  # Set by calc_duration_counts
     timeout_slider: Slider = None  # Set by show_timeout_slider
 
     def __init__(self):
@@ -64,7 +69,10 @@ class HeartbeatData:
 
     def calc_durations(self, timeout=DEFAULT_TIMEOUT):
         print("Calculating durations")
-        self.durations = {}
+        self.duration_dates = []
+        self.duration_types = []
+        self.duration_lengths = []
+        self.duration_starts = []
         heartbeats = zip(self.hb_types, self.dates, self.secs_since_midnights)
         initial = next(heartbeats)
         curr_hb_type = initial[0]
@@ -73,7 +81,10 @@ class HeartbeatData:
         curr_end = curr_start
         for hb_type, hb_date, secs_since_midnight in heartbeats:
             if hb_type != curr_hb_type or hb_date != curr_date or secs_since_midnight > curr_end + timeout:
-                self.durations.setdefault(curr_date, []).append((curr_hb_type, curr_start, curr_end - curr_start))
+                self.duration_dates.append(curr_date)
+                self.duration_types.append(curr_hb_type)
+                self.duration_lengths.append(curr_end - curr_start)
+                self.duration_starts.append(curr_start)
                 curr_hb_type = hb_type
                 curr_date = hb_date
                 curr_start = secs_since_midnight
@@ -138,18 +149,13 @@ class HeartbeatData:
         self.plot_times()
         self.ax.scatter(self.secs_since_midnights, mdates.date2num(self.dates), **kwargs)
 
-    def plot_durations(self, timeout_slider=True, plot_kwargs=None, slider_kwargs=None):
+    def plot_durations(self, timeout_slider=True, plot_kwargs: dict[str, any] = None, slider_kwargs: dict[str, any] = None):
         def refresh():
-            if self.durations is None:
+            if self.duration_dates is None or self.duration_lengths is None or self.duration_starts is None:
                 raise ValueError("Tried to plot durations before durations have been calculated")
-            for hb_date, durations in self.durations.items():
-                if self.colors is not None:
-                    plot_kwargs["facecolors"] = [self.hb_type_color_map[duration[0]] for duration in durations]
-                self.ax.broken_barh(
-                    [duration[1:] for duration in durations],
-                    (mdates.date2num(hb_date), 1),
-                    **plot_kwargs
-                )
+            if self.colors is not None:
+                plot_kwargs.setdefault("color", [self.hb_type_color_map[duration_type] for duration_type in self.duration_types])
+            self.ax.bar(self.duration_starts, 1, self.duration_lengths, mdates.date2num(self.duration_dates), align="edge", **plot_kwargs)
             self.plot_dates()
             self.plot_times()
 
